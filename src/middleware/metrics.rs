@@ -2,7 +2,7 @@
 
 use actix_web::dev;
 use futures_util::future::{self, FutureExt as _, LocalBoxFuture};
-use opentelemetry::metrics::{Histogram, Meter, Unit, UpDownCounter};
+use opentelemetry::metrics::{Counter, Histogram, Meter, Unit, UpDownCounter};
 use opentelemetry::Context;
 use std::{sync::Arc, time::SystemTime};
 
@@ -13,11 +13,13 @@ use crate::RouteFormatter;
 // https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/metrics/semantic_conventions/http-metrics.md
 use opentelemetry_semantic_conventions::trace::HTTP_STATUS_CODE;
 const HTTP_SERVER_ACTIVE_REQUESTS: &str = "http.server.active_requests";
+const HTTP_SERVER_TOTAL_REQUESTS: &str = "http.server.total_requests";
 const HTTP_SERVER_DURATION: &str = "http.server.duration";
 
 #[derive(Clone, Debug)]
 struct Metrics {
     http_server_active_requests: UpDownCounter<i64>,
+    http_server_total_requests: Counter<u64>,
     http_server_duration: Histogram<f64>,
 }
 
@@ -29,6 +31,11 @@ impl Metrics {
             .with_description("HTTP concurrent in-flight requests per route")
             .init();
 
+        let http_server_total_requests = meter
+            .u64_counter(HTTP_SERVER_TOTAL_REQUESTS)
+            .with_description("HTTP total requests per route")
+            .init();
+
         let http_server_duration = meter
             .f64_histogram(HTTP_SERVER_DURATION)
             .with_description("HTTP inbound request duration per route")
@@ -37,6 +44,7 @@ impl Metrics {
 
         Metrics {
             http_server_active_requests,
+            http_server_total_requests,
             http_server_duration,
         }
     }
@@ -193,6 +201,10 @@ where
 
         self.metrics
             .http_server_active_requests
+            .add(&cx, 1, &attributes);
+
+        self.metrics
+            .http_server_total_requests
             .add(&cx, 1, &attributes);
 
         let request_metrics = self.metrics.clone();
